@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { useWeb3 } from "@/contexts/web3-context"
 import { WalletConnect } from "@/components/wallet-connect"
+import ZamaTest from "@/components/ZamaTest"
 import {
   Eye,
   Plus,
@@ -35,6 +36,8 @@ interface UserVote {
 export default function Component() {
   const {
     isConnected,
+    isCorrectNetwork,
+    networkName,
     proposals,
     isLoading,
     createProposal,
@@ -42,6 +45,7 @@ export default function Component() {
     makeVoteCountsPublic,
     hasUserVoted,
     refreshProposals,
+    switchToSepolia,
   } = useWeb3()
 
   const { toast } = useToast()
@@ -205,6 +209,7 @@ export default function Component() {
         {/* Main Content */}
         <main className="pt-12 pb-12 relative z-10">
           <div className="max-w-4xl mx-auto px-6">
+            <ZamaTest />
             <WalletConnect />
           </div>
         </main>
@@ -249,14 +254,64 @@ export default function Component() {
                   <span>{totalProposals} proposals</span>
                 </div>
               </div>
+              
+              {/* Network Status */}
+              {isConnected && (
+                <div className="flex items-center gap-2">
+                  {isCorrectNetwork ? (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-green-500/20 border border-green-500/30 rounded-md">
+                      <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                      <span className="text-xs text-green-400 font-medium">{networkName}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md">
+                        <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                        <span className="text-xs text-red-400 font-medium">Wrong Network</span>
+                      </div>
+                      <Button
+                        onClick={switchToSepolia}
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                      >
+                        Switch to Sepolia
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <WalletConnect />
             </div>
           </div>
         </div>
       </header>
 
+      {/* Network Warning Banner */}
+      {isConnected && !isCorrectNetwork && (
+        <div className="fixed top-16 left-0 right-0 bg-red-500/90 backdrop-blur-xl border-b border-red-400/30 z-10">
+          <div className="max-w-6xl mx-auto px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                <span className="text-white font-medium">
+                  Wrong Network: This app only supports {networkName} network
+                </span>
+              </div>
+              <Button
+                onClick={switchToSepolia}
+                size="sm"
+                className="bg-white text-red-600 hover:bg-gray-100 font-medium"
+              >
+                Switch to Sepolia
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
-      <main className="pt-24 pb-12 relative z-10">
+      <main className={`relative z-10 ${isConnected && !isCorrectNetwork ? 'pt-32' : 'pt-24'} pb-12`}>
         <div className="max-w-6xl mx-auto px-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center justify-between mb-8">

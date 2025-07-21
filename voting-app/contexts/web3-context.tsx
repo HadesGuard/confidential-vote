@@ -3,6 +3,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { ethers } from "ethers"
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract"
+import { prepareVoteForContract, VOTE_OPTIONS, handleFHEError } from "@/lib/fheService"
+import { useFHE } from "@/hooks/useFHE"
+
+// Sepolia network configuration
+const SEPOLIA_CHAIN_ID = 11155111
+const SEPOLIA_NETWORK_NAME = "Sepolia"
+const SEPOLIA_RPC_URL = "https://g.w.lavanet.xyz:443/gateway/sep1/rpc-http/ac0a485e471079428fadfc1850f34a3d"
 
 interface Proposal {
   id: number
@@ -20,18 +27,32 @@ interface Web3ContextType {
   isConnecting: boolean
   chainId: number | null
 
+  // Network state
+  isCorrectNetwork: boolean
+  networkName: string | null
+
   // Contract state
   contract: ethers.Contract | null
   proposals: Proposal[]
   isLoading: boolean
 
+  // FHE state
+  fheStatus: {
+    initialized: boolean
+    loading: boolean
+    error: string | null
+    sdkAvailable: boolean
+  }
+
   // Functions
   connectWallet: () => Promise<void>
   disconnectWallet: () => void
+  switchToSepolia: () => Promise<void>
   createProposal: (description: string) => Promise<void>
   vote: (proposalId: number, voteValue: boolean) => Promise<void>
   makeVoteCountsPublic: (proposalId: number) => Promise<void>
   hasUserVoted: (proposalId: number) => Promise<boolean>
+  getPublicVoteCounts: (proposalId: number) => Promise<{yesCount: number, noCount: number, isPublic: boolean}>
   refreshProposals: () => Promise<void>
 }
 
@@ -46,6 +67,28 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
+  // Network validation
+  const isCorrectNetwork = chainId === SEPOLIA_CHAIN_ID
+  const networkName = chainId ? (chainId === SEPOLIA_CHAIN_ID ? SEPOLIA_NETWORK_NAME : `Chain ID ${chainId}`) : null
+
+  // FHE configuration - only create when user is actually connected
+  const fheConfig = isConnected && account && typeof window !== "undefined" ? {
+    network: (window as any).ethereum,
+    rpcUrl: SEPOLIA_RPC_URL,
+    account: account,
+    chainId: chainId || undefined
+  } : undefined
+
+  // Use FHE service
+  const {
+    isInitialized: fheInitialized,
+    isLoading: fheLoading,
+    error: fheError,
+    encrypt: fheEncrypt,
+    decrypt: fheDecrypt,
+    publicDecrypt: fhePublicDecrypt
+  } = useFHE(fheConfig)
+
   // Initialize Web3
   useEffect(() => {
     checkConnection()
@@ -56,7 +99,30 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       try {
         const accounts = await window.ethereum.request({ method: "eth_accounts" })
         if (accounts.length > 0) {
-          await connectWallet()
+          // User was already connected, restore the connection
+          const chainId = await window.ethereum.request({ method: "eth_chainId" })
+          const currentChainId = Number.parseInt(chainId, 16)
+          
+          setAccount(accounts[0])
+          setChainId(currentChainId)
+          
+          // Create provider and contract instance
+          const provider = new ethers.BrowserProvider(window.ethereum)
+          const signer = await provider.getSigner()
+          const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
+          setContract(contractInstance)
+          setIsConnected(true)
+          
+          // Load proposals
+          await loadProposals(contractInstance)
+          
+          console.log('Restored wallet connection:', {
+            account: accounts[0],
+            chainId: currentChainId,
+            isConnected: true
+          })
+        } else {
+          console.log('No wallet connected, waiting for user to connect...')
         }
       } catch (error) {
         console.error("Error checking connection:", error)
@@ -80,6 +146,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
       // Get chain ID
       const chainId = await window.ethereum.request({ method: "eth_chainId" })
+      const currentChainId = Number.parseInt(chainId, 16)
 
       // Create provider and signer
       const provider = new ethers.BrowserProvider(window.ethereum)
@@ -89,9 +156,15 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
 
       setAccount(accounts[0])
-      setChainId(Number.parseInt(chainId, 16))
+      setChainId(currentChainId)
       setContract(contractInstance)
       setIsConnected(true)
+
+      console.log('Wallet connected successfully:', {
+        account: accounts[0],
+        chainId: currentChainId,
+        isConnected: true
+      })
 
       // Load proposals
       await loadProposals(contractInstance)
@@ -171,27 +244,46 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     }
   }
 
+  const validateNetwork = () => {
+    if (!isCorrectNetwork) {
+      alert(`This app only supports ${SEPOLIA_NETWORK_NAME} network. Please switch to ${SEPOLIA_NETWORK_NAME} in your wallet.`)
+      return false
+    }
+    return true
+  }
+
   const vote = async (proposalId: number, voteValue: boolean) => {
     if (!contract || !account) {
       throw new Error("Wallet not connected")
     }
 
+    if (!fheInitialized) {
+      throw new Error("FHE service not initialized. Please wait for initialization to complete.")
+    }
+
+    // Validate network before voting
+    if (!validateNetwork()) {
+      return
+    }
+
     try {
       setIsLoading(true)
 
-      // For FHEVM, we need to encrypt the vote
-      // This is a simplified version - in reality, you'd use FHEVM's encryption library
-      const encryptedVote = voteValue ? "0x01" : "0x00" // Simplified encryption
-      const proof = "0x" // Simplified proof
+      // Convert boolean vote to numeric value for FHE
+      const numericVote = voteValue ? VOTE_OPTIONS.YES : VOTE_OPTIONS.NO
+      
+      // Use real FHE encryption
+      const encryptedVote = await fheEncrypt(numericVote)
 
-      const tx = await contract.vote(proposalId, encryptedVote, proof)
+      const tx = await contract.vote(proposalId, encryptedVote.encryptedValue, encryptedVote.proof)
       await tx.wait()
 
       // Refresh proposals
       await loadProposals()
     } catch (error) {
       console.error("Error voting:", error)
-      throw error
+      const errorMessage = handleFHEError(error)
+      throw new Error(`Voting failed: ${errorMessage}`)
     } finally {
       setIsLoading(false)
     }
@@ -232,8 +324,69 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     }
   }
 
+  const getPublicVoteCounts = async (proposalId: number): Promise<{yesCount: number, noCount: number, isPublic: boolean}> => {
+    if (!contract) {
+      throw new Error("Contract not connected")
+    }
+
+    try {
+      const [yesCount, noCount, isPublic] = await contract.getPublicVoteCounts(proposalId)
+      return {
+        yesCount: Number(yesCount),
+        noCount: Number(noCount),
+        isPublic: Boolean(isPublic)
+      }
+    } catch (error) {
+      console.error("Error getting public vote counts:", error)
+      return { yesCount: 0, noCount: 0, isPublic: false }
+    }
+  }
+
   const refreshProposals = async () => {
     await loadProposals()
+  }
+
+  const switchToSepolia = async () => {
+    if (typeof window === "undefined" || !window.ethereum) {
+      alert("Please install MetaMask!")
+      return
+    }
+
+    try {
+      // Try to switch to Sepolia network
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${SEPOLIA_CHAIN_ID.toString(16)}` }],
+      })
+    } catch (switchError: any) {
+      // This error code indicates that the chain has not been added to MetaMask
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: `0x${SEPOLIA_CHAIN_ID.toString(16)}`,
+                chainName: SEPOLIA_NETWORK_NAME,
+                nativeCurrency: {
+                  name: "Sepolia Ether",
+                  symbol: "SEP",
+                  decimals: 18,
+                },
+                rpcUrls: [SEPOLIA_RPC_URL],
+                blockExplorerUrls: ["https://sepolia.etherscan.io"],
+              },
+            ],
+          })
+        } catch (addError) {
+          console.error("Error adding Sepolia network:", addError)
+          alert("Failed to add Sepolia network to MetaMask")
+        }
+      } else {
+        console.error("Error switching to Sepolia network:", switchError)
+        alert("Failed to switch to Sepolia network")
+      }
+    }
   }
 
   // Listen for account changes
@@ -266,15 +419,25 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     isConnected,
     isConnecting,
     chainId,
+    isCorrectNetwork,
+    networkName,
     contract,
     proposals,
     isLoading,
+    fheStatus: {
+      initialized: fheInitialized,
+      loading: fheLoading,
+      error: fheError,
+      sdkAvailable: fheInitialized && !fheError
+    },
     connectWallet,
     disconnectWallet,
+    switchToSepolia,
     createProposal,
     vote,
     makeVoteCountsPublic,
     hasUserVoted,
+    getPublicVoteCounts,
     refreshProposals,
   }
 

@@ -69,7 +69,7 @@ export function WalletConnect() {
         </div>
       </div>
 
-      {chainId !== 8009 && (
+      {chainId !== 11155111 && (
         <Badge variant="destructive" className="text-xs">
           <AlertCircle className="h-3 w-3 mr-1" />
           Wrong Network
