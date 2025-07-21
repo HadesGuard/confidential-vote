@@ -1,6 +1,11 @@
-export const CONTRACT_ADDRESS = "0xAb0108043B05b1215B980E32b73026253938E580"
+// Contract configuration for Confidential Voting
+// Similar to zpool-fe structure
 
-export const CONTRACT_ABI = [
+// Contract addresses (Sepolia deployment)
+export const CONFIDENTIAL_VOTING_ADDRESS = "0xAb0108043B05b1215B980E32b73026253938E580";
+
+// Contract ABI - imported from the existing contract.ts
+export const CONFIDENTIAL_VOTING_ABI = [
   {
     anonymous: false,
     inputs: [
@@ -266,4 +271,27 @@ export const CONTRACT_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-] as const
+] as const;
+
+// Network configuration
+export const SEPOLIA_CHAIN_ID = "0xaa36a7"; // 11155111 in hex
+export const SEPOLIA_RPC_ENDPOINTS = [
+  {
+    name: "Lavanet",
+    url: "https://g.w.lavanet.xyz:443/gateway/sep1/rpc-http/ac0a485e471079428fadfc1850f34a3d",
+    priority: 1
+  },
+  {
+    name: "PublicNode",
+    url: "https://ethereum-sepolia-rpc.publicnode.com",
+    priority: 2
+  }
+];
+
+// Contract configuration
+export const CONTRACT_CONFIG = {
+  address: CONFIDENTIAL_VOTING_ADDRESS,
+  abi: CONFIDENTIAL_VOTING_ABI,
+  chainId: SEPOLIA_CHAIN_ID,
+  rpcEndpoints: SEPOLIA_RPC_ENDPOINTS
+}; 

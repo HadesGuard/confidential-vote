@@ -87,24 +87,48 @@ export const useFHE = (config?: FHEConfig): UseFHEReturn => {
 
   // Wrapper functions that check if FHE is initialized
   const encrypt = useCallback(async (value: number): Promise<{ encryptedValue: string; proof: string }> => {
+    console.log('FHE encrypt called with value:', value, 'fheInstance:', !!fheInstance);
     if (!fheInstance) {
-      throw new Error('FHE service not initialized');
+      throw new Error('FHE service not initialized. Please wait for initialization to complete.');
     }
-    return await fheInstance.encrypt(value);
+    try {
+      const result = await fheInstance.encrypt(value);
+      console.log('FHE encrypt result:', result);
+      return result;
+    } catch (error) {
+      console.error('FHE encrypt error:', error);
+      throw error;
+    }
   }, [fheInstance]);
 
   const decrypt = useCallback(async (encryptedValue: string): Promise<number> => {
+    console.log('FHE decrypt called with value:', encryptedValue, 'fheInstance:', !!fheInstance);
     if (!fheInstance) {
-      throw new Error('FHE service not initialized');
+      throw new Error('FHE service not initialized. Please wait for initialization to complete.');
     }
-    return await fheInstance.decrypt(encryptedValue);
+    try {
+      const result = await fheInstance.decrypt(encryptedValue);
+      console.log('FHE decrypt result:', result);
+      return result;
+    } catch (error) {
+      console.error('FHE decrypt error:', error);
+      throw error;
+    }
   }, [fheInstance]);
 
   const publicDecrypt = useCallback(async (encryptedValue: string): Promise<number> => {
+    console.log('FHE publicDecrypt called with value:', encryptedValue, 'fheInstance:', !!fheInstance);
     if (!fheInstance) {
-      throw new Error('FHE service not initialized');
+      throw new Error('FHE service not initialized. Please wait for initialization to complete.');
     }
-    return await fheInstance.publicDecrypt(encryptedValue);
+    try {
+      const result = await fheInstance.publicDecrypt(encryptedValue);
+      console.log('FHE publicDecrypt result:', result);
+      return result;
+    } catch (error) {
+      console.error('FHE publicDecrypt error:', error);
+      throw error;
+    }
   }, [fheInstance]);
 
   return {

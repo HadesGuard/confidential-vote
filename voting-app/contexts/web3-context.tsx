@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { ethers } from "ethers"
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract"
 import { prepareVoteForContract, VOTE_OPTIONS, handleFHEError } from "@/lib/fheService"
 import { useFHE } from "@/hooks/useFHE"
+import { CONFIDENTIAL_VOTING_ABI, CONFIDENTIAL_VOTING_ADDRESS } from "@/lib/contracts"
 
 // Sepolia network configuration
 const SEPOLIA_CHAIN_ID = 11155111
@@ -79,6 +79,13 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     chainId: chainId || undefined
   } : undefined
 
+  console.log('FHE config:', {
+    isConnected,
+    account,
+    chainId,
+    fheConfig: !!fheConfig
+  })
+
   // Use FHE service
   const {
     isInitialized: fheInitialized,
@@ -88,6 +95,13 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     decrypt: fheDecrypt,
     publicDecrypt: fhePublicDecrypt
   } = useFHE(fheConfig)
+
+  console.log('FHE status:', {
+    fheInitialized,
+    fheLoading,
+    fheError,
+    fheEncrypt: !!fheEncrypt
+  })
 
   // Initialize Web3
   useEffect(() => {
@@ -109,7 +123,19 @@ export function Web3Provider({ children }: { children: ReactNode }) {
           // Create provider and contract instance
           const provider = new ethers.BrowserProvider(window.ethereum)
           const signer = await provider.getSigner()
-          const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
+          const contractInstance = new ethers.Contract(CONFIDENTIAL_VOTING_ADDRESS, CONFIDENTIAL_VOTING_ABI, signer)
+          
+          // Check if contract exists at address
+          const contractCode = await provider.getCode(CONFIDENTIAL_VOTING_ADDRESS)
+          console.log('Contract code exists:', contractCode !== '0x')
+          console.log('Contract address:', CONFIDENTIAL_VOTING_ADDRESS)
+          
+          if (contractCode === '0x') {
+            console.error('Contract not found at address:', CONFIDENTIAL_VOTING_ADDRESS)
+            alert('Contract not found at this address. Please check deployment.')
+            return
+          }
+          
           setContract(contractInstance)
           setIsConnected(true)
           
@@ -119,7 +145,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
           console.log('Restored wallet connection:', {
             account: accounts[0],
             chainId: currentChainId,
-            isConnected: true
+            isConnected: true,
+            contractExists: true
           })
         } else {
           console.log('No wallet connected, waiting for user to connect...')
@@ -153,7 +180,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       const signer = await provider.getSigner()
 
       // Create contract instance
-      const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
+      const contractInstance = new ethers.Contract(CONFIDENTIAL_VOTING_ADDRESS, CONFIDENTIAL_VOTING_ABI, signer)
 
       setAccount(accounts[0])
       setChainId(currentChainId)
@@ -272,16 +299,54 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       // Convert boolean vote to numeric value for FHE
       const numericVote = voteValue ? VOTE_OPTIONS.YES : VOTE_OPTIONS.NO
       
+      console.log('Starting FHE encryption for vote:', {
+        proposalId,
+        voteValue,
+        numericVote,
+        voteOptions: VOTE_OPTIONS,
+        fheInitialized,
+        fheLoading,
+        fheError
+      })
+      
+      // Validate vote value matches contract enum
+      if (numericVote !== 0 && numericVote !== 1) {
+        throw new Error(`Invalid vote value: ${numericVote}. Must be 0 (Yes) or 1 (No)`);
+      }
+      
+      // Check if fheEncrypt is available
+      if (!fheEncrypt) {
+        throw new Error("FHE encrypt function not available")
+      }
+      
       // Use real FHE encryption
       const encryptedVote = await fheEncrypt(numericVote)
+      
+      console.log('FHE encryption successful:', encryptedVote)
+      console.log('Contract vote call params:', {
+        proposalId,
+        encryptedValue: encryptedVote.encryptedValue,
+        proof: encryptedVote.proof,
+        contractAddress: contract.target
+      })
 
       const tx = await contract.vote(proposalId, encryptedVote.encryptedValue, encryptedVote.proof)
       await tx.wait()
 
       // Refresh proposals
       await loadProposals()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error voting:", error)
+      
+      // Handle specific contract errors
+      if (error?.message?.includes('Already voted')) {
+        throw new Error('You have already voted on this proposal. Each user can only vote once.')
+      }
+      
+      if (error?.message?.includes('Invalid proposal')) {
+        throw new Error('Invalid proposal ID. Please refresh and try again.')
+      }
+      
       const errorMessage = handleFHEError(error)
       throw new Error(`Voting failed: ${errorMessage}`)
     } finally {
@@ -317,9 +382,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
     try {
       const voted = await contract.hasUserVoted(proposalId, account)
+      console.log(`User ${account} has voted on proposal ${proposalId}:`, voted)
       return voted
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error checking if user voted:", error)
+      // Return false on error to allow user to try voting
       return false
     }
   }
