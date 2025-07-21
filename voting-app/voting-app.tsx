@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { useWeb3 } from "@/contexts/web3-context"
 import { WalletConnect } from "@/components/wallet-connect"
-import ZamaTest from "@/components/ZamaTest"
 import {
   Eye,
   Plus,
@@ -40,10 +39,12 @@ export default function Component() {
     networkName,
     proposals,
     isLoading,
+    fheStatus,
     createProposal,
     vote,
     makeVoteCountsPublic,
     hasUserVoted,
+    getMyVote,
     refreshProposals,
     switchToSepolia,
   } = useWeb3()
@@ -58,7 +59,17 @@ export default function Component() {
   // Check voting status for all proposals
   useEffect(() => {
     if (isConnected && proposals.length > 0) {
-      checkVotingStatus()
+      // Only check for proposals we don't already have votes for
+      const proposalsToCheck = proposals.filter(proposal => 
+        !userVotes.some(vote => vote.proposalId === proposal.id)
+      )
+      
+      if (proposalsToCheck.length > 0) {
+        console.log('Checking voting status for proposals:', proposalsToCheck.map(p => p.id))
+        checkVotingStatus()
+      } else {
+        console.log('All proposals already have local vote data')
+      }
     }
   }, [isConnected, proposals])
 
@@ -67,14 +78,25 @@ export default function Component() {
     for (const proposal of proposals) {
       try {
         const voted = await hasUserVoted(proposal.id)
+        console.log(`Checking vote status for proposal ${proposal.id}: voted = ${voted}`)
+        
         if (voted) {
-          // Since we can't get the actual vote from the contract easily,
-          // we'll track it locally or assume it exists
-          votes.push({
-            proposalId: proposal.id,
-            vote: "yes", // This would need to be tracked differently in a real app
-            votedAt: new Date(),
-          })
+          // Check if we already have this vote in local state
+          const existingVote = userVotes.find(v => v.proposalId === proposal.id)
+          if (existingVote) {
+            // Keep existing vote value from local state
+            votes.push(existingVote)
+            console.log(`Using existing vote for proposal ${proposal.id}:`, existingVote.vote)
+          } else {
+            // For now, use placeholder since getMyVote is not working properly
+            // In a real implementation, you would decrypt the encrypted vote
+            console.log(`No existing vote found for proposal ${proposal.id}, using placeholder`)
+            votes.push({
+              proposalId: proposal.id,
+              vote: "yes", // Placeholder - should be decrypted from encryptedVote
+              votedAt: new Date(),
+            })
+          }
         }
       } catch (error) {
         console.error(`Error checking vote status for proposal ${proposal.id}:`, error)
@@ -109,17 +131,21 @@ export default function Component() {
 
   const handleVote = async (proposalId: number, voteValue: "yes" | "no") => {
     try {
+      console.log('UI handleVote called:', { proposalId, voteValue, booleanValue: voteValue === "yes" })
+      
       setVotingStates((prev) => ({ ...prev, [proposalId]: true }))
 
       await vote(proposalId, voteValue === "yes")
 
-      // Update local vote tracking
+      // Update local vote tracking with correct vote value
       const newVote: UserVote = {
         proposalId,
-        vote: voteValue,
+        vote: voteValue, // This should be the correct vote value
         votedAt: new Date(),
       }
       setUserVotes((prev) => [...prev.filter((v) => v.proposalId !== proposalId), newVote])
+
+      console.log('Vote completed successfully:', { proposalId, voteValue, newVote })
 
       toast({
         title: "Vote Submitted",
@@ -209,7 +235,6 @@ export default function Component() {
         {/* Main Content */}
         <main className="pt-12 pb-12 relative z-10">
           <div className="max-w-4xl mx-auto px-6">
-            <ZamaTest />
             <WalletConnect />
           </div>
         </main>
@@ -224,6 +249,17 @@ export default function Component() {
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
+
+      {/* FHE Loading Overlay */}
+      {fheStatus.loading && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-slate-800/90 border border-slate-700/50 rounded-xl p-8 text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-blue-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">Initializing FHE</h3>
+            <p className="text-slate-400">Loading confidential voting system...</p>
+          </div>
+        </div>
+      )}
 
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-b border-purple-500/20 z-10">
@@ -244,6 +280,19 @@ export default function Component() {
               </div>
             </div>
             <div className="flex items-center gap-6">
+              {/* FHE Loading Indicator */}
+              {fheStatus.loading && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-full">
+                  <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
+                  <span className="text-xs text-blue-400">Loading FHE...</span>
+                </div>
+              )}
+              {fheStatus.error && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-red-500/20 border border-red-500/30 rounded-full">
+                  <XCircle className="h-3 w-3 text-red-400" />
+                  <span className="text-xs text-red-400">FHE Error</span>
+                </div>
+              )}
               <div className="hidden sm:flex items-center gap-6 text-sm text-slate-400">
                 <div className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
@@ -409,7 +458,7 @@ export default function Component() {
                           <Button
                             variant={getUserVote(proposal.id)?.vote === "yes" ? "default" : "outline"}
                             onClick={() => handleVote(proposal.id, "yes")}
-                            disabled={votingStates[proposal.id] || isLoading}
+                            disabled={votingStates[proposal.id] || isLoading || fheStatus.loading || !fheStatus.initialized}
                             className={`h-12 font-medium transition-all duration-200 ${
                               getUserVote(proposal.id)?.vote === "yes"
                                 ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white border-0"
@@ -418,15 +467,17 @@ export default function Component() {
                           >
                             {votingStates[proposal.id] ? (
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : fheStatus.loading ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                             ) : (
                               <CheckCircle className="h-4 w-4 mr-2" />
                             )}
-                            Vote Yes
+                            {fheStatus.loading ? "Loading FHE..." : "Vote Yes"}
                           </Button>
                           <Button
                             variant={getUserVote(proposal.id)?.vote === "no" ? "destructive" : "outline"}
                             onClick={() => handleVote(proposal.id, "no")}
-                            disabled={votingStates[proposal.id] || isLoading}
+                            disabled={votingStates[proposal.id] || isLoading || fheStatus.loading || !fheStatus.initialized}
                             className={`h-12 font-medium transition-all duration-200 ${
                               getUserVote(proposal.id)?.vote === "no"
                                 ? "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white border-0"
@@ -435,10 +486,12 @@ export default function Component() {
                           >
                             {votingStates[proposal.id] ? (
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : fheStatus.loading ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                             ) : (
                               <XCircle className="h-4 w-4 mr-2" />
                             )}
-                            Vote No
+                            {fheStatus.loading ? "Loading FHE..." : "Vote No"}
                           </Button>
                         </div>
 
