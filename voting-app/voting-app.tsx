@@ -110,7 +110,7 @@ export default function Component() {
         const existingVotes = userVotes.filter(vote => votedProposals.includes(vote.proposalId))
         const newProposals = votedProposals.filter(id => !userVotes.some(vote => vote.proposalId === id))
         
-        // Add existing votes
+        // Add existing votes (including votes we just made)
         votes.push(...existingVotes)
         
         if (newProposals.length > 0) {
@@ -199,6 +199,14 @@ export default function Component() {
       // Update loading text to show confirmation step
       setVotingStates((prev) => ({ ...prev, [proposalId]: "Confirming..." }))
 
+      // Add vote to local state immediately (we know what user voted)
+      const newVote: UserVote = {
+        proposalId,
+        vote: voteValue,
+        votedAt: new Date(),
+      }
+      setUserVotes((prev) => [...prev.filter((v) => v.proposalId !== proposalId), newVote])
+
       console.log('Vote completed successfully:', { proposalId, voteValue })
 
       toast({
@@ -208,9 +216,6 @@ export default function Component() {
       
       // Refresh proposals to get updated vote counts
       await refreshProposals()
-      
-      // Check voting status to get the actual decrypted vote from blockchain
-      await checkVotingStatus()
     } catch (error) {
       console.error("Error voting:", error)
       toast({
