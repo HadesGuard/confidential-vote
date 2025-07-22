@@ -2,275 +2,307 @@
 // Similar to zpool-fe structure
 
 // Contract addresses (Sepolia deployment)
-export const CONFIDENTIAL_VOTING_ADDRESS = "0xAb0108043B05b1215B980E32b73026253938E580";
+export const CONFIDENTIAL_VOTING_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0xFFF82723DbF6e060FE6663D6194cCB5F77471791";
 
 // Contract ABI - imported from the existing contract.ts
 export const CONFIDENTIAL_VOTING_ABI = [
   {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "string",
-        name: "description",
-        type: "string",
-      },
-    ],
-    name: "ProposalCreated",
-    type: "event",
+    "inputs": [],
+    "name": "AlreadyVoted",
+    "type": "error"
   },
   {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "uint8",
-        name: "yesCount",
-        type: "uint8",
-      },
-      {
-        indexed: false,
-        internalType: "uint8",
-        name: "noCount",
-        type: "uint8",
-      },
-    ],
-    name: "VoteCountsMadePublic",
-    type: "event",
+    "inputs": [],
+    "name": "FHEPermissionDenied",
+    "type": "error"
   },
   {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "address",
-        name: "voter",
-        type: "address",
-      },
-    ],
-    name: "Voted",
-    type: "event",
+    "inputs": [],
+    "name": "InvalidProposal",
+    "type": "error"
   },
   {
-    inputs: [
-      {
-        internalType: "string",
-        name: "description",
-        type: "string",
-      },
-    ],
-    name: "createProposal",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    "inputs": [],
+    "name": "NotVoted",
+    "type": "error"
   },
   {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
-    ],
-    name: "getEncryptedVoteCount",
-    outputs: [
-      {
-        internalType: "euint8",
-        name: "yes",
-        type: "bytes32",
-      },
-      {
-        internalType: "euint8",
-        name: "no",
-        type: "bytes32",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
+    "inputs": [],
+    "name": "VoteCountsAlreadyPublic",
+    "type": "error"
   },
   {
-    inputs: [
+    "anonymous": false,
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
       },
-    ],
-    name: "getMyVote",
-    outputs: [
       {
-        internalType: "euint8",
-        name: "",
-        type: "bytes32",
-      },
+        "indexed": false,
+        "internalType": "string",
+        "name": "description",
+        "type": "string"
+      }
     ],
-    stateMutability: "nonpayable",
-    type: "function",
+    "name": "ProposalCreated",
+    "type": "event"
   },
   {
-    inputs: [
+    "anonymous": false,
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
     ],
-    name: "getPublicVoteCounts",
-    outputs: [
-      {
-        internalType: "uint8",
-        name: "yesCount",
-        type: "uint8",
-      },
-      {
-        internalType: "uint8",
-        name: "noCount",
-        type: "uint8",
-      },
-      {
-        internalType: "bool",
-        name: "isPublic",
-        type: "bool",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
+    "name": "VoteCountsMadePublic",
+    "type": "event"
   },
   {
-    inputs: [
+    "anonymous": false,
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
       },
       {
-        internalType: "address",
-        name: "voter",
-        type: "address",
-      },
+        "indexed": false,
+        "internalType": "address",
+        "name": "voter",
+        "type": "address"
+      }
     ],
-    name: "hasUserVoted",
-    outputs: [
-      {
-        internalType: "bool",
-        name: "",
-        type: "bool",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
+    "name": "Voted",
+    "type": "event"
   },
   {
-    inputs: [
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
+        "internalType": "string",
+        "name": "description",
+        "type": "string"
+      }
     ],
-    name: "makeVoteCountsPublic",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    "name": "createProposal",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "proposalCount",
-    outputs: [
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "name": "getEncryptedVoteCount",
+    "outputs": [
+      {
+        "internalType": "euint8",
+        "name": "yes",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint8",
+        "name": "no",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
     ],
-    name: "proposals",
-    outputs: [
+    "name": "getMyVote",
+    "outputs": [
       {
-        internalType: "string",
-        name: "description",
-        type: "string",
-      },
-      {
-        internalType: "euint8",
-        name: "yesCount",
-        type: "bytes32",
-      },
-      {
-        internalType: "euint8",
-        name: "noCount",
-        type: "bytes32",
-      },
-      {
-        internalType: "bool",
-        name: "isPublic",
-        type: "bool",
-      },
-      {
-        internalType: "uint8",
-        name: "publicYesCount",
-        type: "uint8",
-      },
-      {
-        internalType: "uint8",
-        name: "publicNoCount",
-        type: "uint8",
-      },
+        "internalType": "euint8",
+        "name": "",
+        "type": "bytes32"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "proposalId",
-        type: "uint256",
-      },
-      {
-        internalType: "externalEuint8",
-        name: "encryptedVote",
-        type: "bytes32",
-      },
-      {
-        internalType: "bytes",
-        name: "proof",
-        type: "bytes",
-      },
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
     ],
-    name: "vote",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    "name": "getPublicVoteCounts",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "yesCount",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint8",
+        "name": "noCount",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bool",
+        "name": "isPublic",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
+    ],
+    "name": "hasAnyVotes",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "voter",
+        "type": "address"
+      }
+    ],
+    "name": "hasUserVoted",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
+    ],
+    "name": "makeVoteCountsPublic",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "proposalCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "proposals",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "internalType": "euint8",
+        "name": "yesCount",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint8",
+        "name": "noCount",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bool",
+        "name": "isPublic",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint8",
+        "name": "publicYesCount",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint8",
+        "name": "publicNoCount",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "externalEuint8",
+        "name": "encryptedVote",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "proof",
+        "type": "bytes"
+      }
+    ],
+    "name": "vote",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
 ] as const;
 
 // Network configuration

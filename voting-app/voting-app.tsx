@@ -28,12 +28,13 @@ import {
 
 interface UserVote {
   proposalId: number
-  vote: "yes" | "no"
+  vote: "yes" | "no" | "unknown" | "error"
   votedAt: Date
 }
 
 export default function Component() {
   const {
+    account,
     isConnected,
     isCorrectNetwork,
     networkName,
@@ -45,20 +46,24 @@ export default function Component() {
     makeVoteCountsPublic,
     hasUserVoted,
     getMyVote,
+    getPublicVoteCounts,
+    decryptVoteCounts,
     refreshProposals,
     switchToSepolia,
+    fheDecrypt,
+    fheUserDecrypt
   } = useWeb3()
 
   const { toast } = useToast()
   const [newProposal, setNewProposal] = useState("")
   const [activeTab, setActiveTab] = useState("vote")
   const [userVotes, setUserVotes] = useState<UserVote[]>([])
-  const [votingStates, setVotingStates] = useState<Record<number, boolean>>({})
+  const [votingStates, setVotingStates] = useState<Record<number, string>>({})
   const [creatingProposal, setCreatingProposal] = useState(false)
 
   // Check voting status for all proposals
   useEffect(() => {
-    if (isConnected && proposals.length > 0) {
+    if (isConnected && proposals.length > 0 && fheStatus.initialized) {
       // Only check for proposals we don't already have votes for
       const proposalsToCheck = proposals.filter(proposal => 
         !userVotes.some(vote => vote.proposalId === proposal.id)
@@ -71,37 +76,84 @@ export default function Component() {
         console.log('All proposals already have local vote data')
       }
     }
-  }, [isConnected, proposals])
+  }, [isConnected, proposals, fheStatus.initialized])
+
+  // Clear user votes when wallet disconnects
+  useEffect(() => {
+    if (!isConnected) {
+      setUserVotes([])
+      setVotingStates({})
+    }
+  }, [isConnected])
 
   const checkVotingStatus = async () => {
     const votes: UserVote[] = []
-    for (const proposal of proposals) {
-      try {
-        const voted = await hasUserVoted(proposal.id)
-        console.log(`Checking vote status for proposal ${proposal.id}: voted = ${voted}`)
+    
+    try {
+      // First, find all proposals where user has voted
+      const votedProposals: number[] = []
+      for (const proposal of proposals) {
+        try {
+          const voted = await hasUserVoted(proposal.id)
+          if (voted) {
+            votedProposals.push(proposal.id)
+          }
+        } catch (error) {
+          console.error(`Error checking vote status for proposal ${proposal.id}:`, error)
+        }
+      }
+
+      if (votedProposals.length > 0) {
+        console.log('User has voted on proposals:', votedProposals)
         
-        if (voted) {
-          // Check if we already have this vote in local state
-          const existingVote = userVotes.find(v => v.proposalId === proposal.id)
-          if (existingVote) {
-            // Keep existing vote value from local state
-            votes.push(existingVote)
-            console.log(`Using existing vote for proposal ${proposal.id}:`, existingVote.vote)
-          } else {
-            // For now, use placeholder since getMyVote is not working properly
-            // In a real implementation, you would decrypt the encrypted vote
-            console.log(`No existing vote found for proposal ${proposal.id}, using placeholder`)
-            votes.push({
-              proposalId: proposal.id,
-              vote: "yes", // Placeholder - should be decrypted from encryptedVote
-              votedAt: new Date(),
-            })
+        // Check if we already have these votes in local state
+        const existingVotes = userVotes.filter(vote => votedProposals.includes(vote.proposalId))
+        const newProposals = votedProposals.filter(id => !userVotes.some(vote => vote.proposalId === id))
+        
+        // Add existing votes
+        votes.push(...existingVotes)
+        
+        if (newProposals.length > 0) {
+          console.log('Need to decrypt votes for proposals:', newProposals)
+          
+          // Get encrypted votes for each proposal individually (old pattern)
+          for (const proposalId of newProposals) {
+            try {
+              const encryptedVote = await getMyVote(proposalId)
+              
+              if (fheStatus.initialized && fheUserDecrypt) {
+                const decryptedVote = await fheUserDecrypt(encryptedVote)
+                const voteValue = decryptedVote === 0 ? "yes" : "no"
+                
+                votes.push({
+                  proposalId: proposalId,
+                  vote: voteValue,
+                  votedAt: new Date(),
+                })
+                console.log(`Added decrypted vote for proposal ${proposalId}:`, voteValue)
+              } else {
+                console.log(`FHE not initialized, using placeholder for proposal ${proposalId}`)
+                votes.push({
+                  proposalId: proposalId,
+                  vote: "unknown", // Placeholder
+                  votedAt: new Date(),
+                })
+              }
+            } catch (error) {
+              console.error(`Error getting vote for proposal ${proposalId}:`, error)
+              votes.push({
+                proposalId: proposalId,
+                vote: "error",
+                votedAt: new Date(),
+              })
+            }
           }
         }
-      } catch (error) {
-        console.error(`Error checking vote status for proposal ${proposal.id}:`, error)
       }
+    } catch (error) {
+      console.error('Error in checkVotingStatus:', error)
     }
+    
     setUserVotes(votes)
   }
 
@@ -130,36 +182,44 @@ export default function Component() {
   }
 
   const handleVote = async (proposalId: number, voteValue: "yes" | "no") => {
+    // Set loading state immediately
+    setVotingStates((prev) => ({ ...prev, [proposalId]: "Preparing..." }))
+    
     try {
       console.log('UI handleVote called:', { proposalId, voteValue, booleanValue: voteValue === "yes" })
       
-      setVotingStates((prev) => ({ ...prev, [proposalId]: true }))
+      // Update loading text to show encryption step
+      setVotingStates((prev) => ({ ...prev, [proposalId]: "Encrypting..." }))
 
       await vote(proposalId, voteValue === "yes")
+      
+      // Update loading text to show submission step
+      setVotingStates((prev) => ({ ...prev, [proposalId]: "Submitting..." }))
 
-      // Update local vote tracking with correct vote value
-      const newVote: UserVote = {
-        proposalId,
-        vote: voteValue, // This should be the correct vote value
-        votedAt: new Date(),
-      }
-      setUserVotes((prev) => [...prev.filter((v) => v.proposalId !== proposalId), newVote])
+      // Update loading text to show confirmation step
+      setVotingStates((prev) => ({ ...prev, [proposalId]: "Confirming..." }))
 
-      console.log('Vote completed successfully:', { proposalId, voteValue, newVote })
+      console.log('Vote completed successfully:', { proposalId, voteValue })
 
       toast({
         title: "Vote Submitted",
         description: `Your ${voteValue} vote has been recorded on the blockchain.`,
       })
+      
+      // Refresh proposals to get updated vote counts
+      await refreshProposals()
+      
+      // Check voting status to get the actual decrypted vote from blockchain
+      await checkVotingStatus()
     } catch (error) {
       console.error("Error voting:", error)
       toast({
         title: "Error",
-        description: "Failed to submit vote. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to submit vote. Please try again.",
         variant: "destructive",
       })
     } finally {
-      setVotingStates((prev) => ({ ...prev, [proposalId]: false }))
+      setVotingStates((prev) => ({ ...prev, [proposalId]: "" }))
     }
   }
 
@@ -458,10 +518,18 @@ export default function Component() {
                           <Button
                             variant={getUserVote(proposal.id)?.vote === "yes" ? "default" : "outline"}
                             onClick={() => handleVote(proposal.id, "yes")}
-                            disabled={votingStates[proposal.id] || isLoading || fheStatus.loading || !fheStatus.initialized}
+                            disabled={
+                              !!votingStates[proposal.id] || 
+                              isLoading || 
+                              fheStatus.loading || 
+                              !fheStatus.initialized ||
+                              hasUserVotedOnProposal(proposal.id)
+                            }
                             className={`h-12 font-medium transition-all duration-200 ${
                               getUserVote(proposal.id)?.vote === "yes"
                                 ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white border-0"
+                                : hasUserVotedOnProposal(proposal.id)
+                                ? "bg-slate-600/30 border-slate-500 text-slate-400 cursor-not-allowed"
                                 : "bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-green-600/20 hover:border-green-500/50 hover:text-green-400"
                             }`}
                           >
@@ -472,15 +540,23 @@ export default function Component() {
                             ) : (
                               <CheckCircle className="h-4 w-4 mr-2" />
                             )}
-                            {fheStatus.loading ? "Loading FHE..." : "Vote Yes"}
+                            {votingStates[proposal.id] || (fheStatus.loading ? "Loading FHE..." : "Vote Yes")}
                           </Button>
                           <Button
                             variant={getUserVote(proposal.id)?.vote === "no" ? "destructive" : "outline"}
                             onClick={() => handleVote(proposal.id, "no")}
-                            disabled={votingStates[proposal.id] || isLoading || fheStatus.loading || !fheStatus.initialized}
+                            disabled={
+                              !!votingStates[proposal.id] || 
+                              isLoading || 
+                              fheStatus.loading || 
+                              !fheStatus.initialized ||
+                              hasUserVotedOnProposal(proposal.id)
+                            }
                             className={`h-12 font-medium transition-all duration-200 ${
                               getUserVote(proposal.id)?.vote === "no"
                                 ? "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white border-0"
+                                : hasUserVotedOnProposal(proposal.id)
+                                ? "bg-slate-600/30 border-slate-500 text-slate-400 cursor-not-allowed"
                                 : "bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-red-600/20 hover:border-red-500/50 hover:text-red-400"
                             }`}
                           >
@@ -491,7 +567,7 @@ export default function Component() {
                             ) : (
                               <XCircle className="h-4 w-4 mr-2" />
                             )}
-                            {fheStatus.loading ? "Loading FHE..." : "Vote No"}
+                            {votingStates[proposal.id] || (fheStatus.loading ? "Loading FHE..." : "Vote No")}
                           </Button>
                         </div>
 

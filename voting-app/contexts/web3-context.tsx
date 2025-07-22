@@ -59,6 +59,8 @@ interface Web3ContextType {
   getPublicVoteCounts: (proposalId: number) => Promise<{yesCount: number, noCount: number, isPublic: boolean}>
   decryptVoteCounts: (proposalId: number) => Promise<{yesCount: number, noCount: number}>
   refreshProposals: () => Promise<void>
+  fheDecrypt?: (encryptedValue: any) => Promise<number>
+  fheUserDecrypt?: (encryptedValue: any) => Promise<number>
 }
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined)
@@ -98,7 +100,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     error: fheError,
     encrypt: fheEncrypt,
     decrypt: fheDecrypt,
-    publicDecrypt: fhePublicDecrypt
+    publicDecrypt: fhePublicDecrypt,
+    userDecrypt: fheUserDecrypt
   } = useFHE(fheConfig)
 
   console.log('FHE status:', {
@@ -112,6 +115,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   useEffect(() => {
     checkConnection()
   }, [])
+
+  // Load proposals when FHE is initialized
+  useEffect(() => {
+    if (fheInitialized && isConnected && contract && proposals.length === 0) {
+      console.log('FHE initialized, loading proposals...')
+      loadProposals()
+    }
+  }, [fheInitialized, isConnected, contract])
 
   const checkConnection = async () => {
     if (typeof window !== "undefined" && window.ethereum) {
@@ -144,8 +155,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
           setContract(contractInstance)
           setIsConnected(true)
           
-          // Load proposals
-          await loadProposals(contractInstance)
+          // Don't load proposals yet - wait for FHE to be initialized
+          console.log('Wallet connected, waiting for FHE initialization before loading proposals')
           
           console.log('Restored wallet connection:', {
             account: accounts[0],
@@ -198,8 +209,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         isConnected: true
       })
 
-      // Load proposals
-      await loadProposals(contractInstance)
+      // Don't load proposals yet - wait for FHE to be initialized
+      console.log('Wallet connected, waiting for FHE initialization before loading proposals')
     } catch (error) {
       console.error("Error connecting wallet:", error)
     } finally {
@@ -233,52 +244,62 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         try {
           const proposal = await contractToUse.proposals(i)
           const [yesCount, noCount, isPublic] = await contractToUse.getPublicVoteCounts(i)
-          
-          let actualYesCount = Number(yesCount);
-          let actualNoCount = Number(noCount);
-          let totalVotes = actualYesCount + actualNoCount;
-          
-          // If proposal is public, try to decrypt vote counts
+      
+          let actualYesCount = Number(yesCount)
+          let actualNoCount = Number(noCount)
+          let totalVotes = actualYesCount + actualNoCount
+      
+          let encryptedYesCount, encryptedNoCount
+          console.log('isPublic', isPublic)
+          console.log('fheInitialized', fheInitialized)
           if (isPublic && fheInitialized) {
             try {
-              const decryptedCounts = await decryptVoteCounts(i);
-              actualYesCount = decryptedCounts.yesCount;
-              actualNoCount = decryptedCounts.noCount;
-              totalVotes = actualYesCount + actualNoCount;
-              console.log(`Decrypted counts for proposal ${i}:`, { actualYesCount, actualNoCount, totalVotes });
-            } catch (error) {
-              console.log(`Could not decrypt vote counts for proposal ${i}:`, error);
-              // Fall back to public counts (which might be 0)
+              const decrypted = await decryptVoteCounts(i)
+              actualYesCount = decrypted.yesCount
+              actualNoCount = decrypted.noCount
+              totalVotes = actualYesCount + actualNoCount
+              console.log(`✅ Decrypted proposal ${i}:`, { actualYesCount, actualNoCount })
+            } catch (err) {
+              console.warn(`⚠️ Failed to decrypt proposal ${i}, using encrypted counts`, err)
+              // Fallback to encrypted counts if decryption fails
+              try {
+                const [encYes, encNo] = await contractToUse.getEncryptedVoteCount(i)
+                encryptedYesCount = encYes
+                encryptedNoCount = encNo
+                // Keep counts as 0 since we can't decrypt
+                actualYesCount = 0
+                actualNoCount = 0
+                totalVotes = 0
+              } catch (encErr) {
+                console.warn(`⚠️ Could not fetch encrypted counts for proposal ${i}`, encErr)
+              }
             }
-          }
-          
-          // Try to get encrypted vote counts if not public
-          let encryptedYesCount, encryptedNoCount;
-          if (!isPublic) {
+          } else {
             try {
-              const [encryptedYes, encryptedNo] = await contractToUse.getEncryptedVoteCount(i)
-              encryptedYesCount = encryptedYes;
-              encryptedNoCount = encryptedNo;
-            } catch (error) {
-              console.log(`Could not get encrypted vote counts for proposal ${i}:`, error)
+              const [encYes, encNo] = await contractToUse.getEncryptedVoteCount(i)
+              encryptedYesCount = encYes
+              encryptedNoCount = encNo
+            } catch (err) {
+              console.warn(`⚠️ Could not fetch encrypted counts for proposal ${i}`, err)
             }
           }
-
+      
           loadedProposals.push({
             id: i,
             description: proposal.description,
             yesCount: actualYesCount,
             noCount: actualNoCount,
-            isPublic: isPublic,
-            createdAt: new Date(), // Contract doesn't store timestamp, using current time
+            isPublic,
+            createdAt: new Date(),
             encryptedYesCount,
             encryptedNoCount,
-            totalVotes
+            totalVotes,
           })
         } catch (error) {
-          console.error(`Error loading proposal ${i}:`, error)
+          console.error(`❌ Error loading proposal ${i}:`, error)
         }
       }
+      
 
       setProposals(loadedProposals.reverse()) // Show newest first
     } catch (error) {
@@ -401,9 +422,54 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       setIsLoading(true)
 
       console.log(`Making vote counts public for proposal ${proposalId}...`)
+      console.log('Contract address:', contract.target)
+      console.log('User address:', account)
+      
+      // Check if proposal exists and current state
+      try {
+        const proposal = await contract.proposals(proposalId)
+        console.log('Proposal exists:', !!proposal)
+        
+        // Check if already public
+        const [yesCount, noCount, isPublic] = await contract.getPublicVoteCounts(proposalId)
+        console.log('Current proposal state:', { yesCount: Number(yesCount), noCount: Number(noCount), isPublic })
+        
+        if (isPublic) {
+          throw new Error('Vote counts are already public')
+        }
+      } catch (checkError) {
+        console.log('Error checking proposal state:', checkError)
+      }
+
+      // Try to estimate gas first to catch errors early
+      try {
+        const gasEstimate = await contract.makeVoteCountsPublic.estimateGas(proposalId)
+        console.log('Gas estimate:', gasEstimate.toString())
+      } catch (estimateError: any) {
+        console.error('Gas estimation failed:', estimateError)
+        
+        // Handle specific custom errors
+        if (estimateError?.data) {
+          const errorData = estimateError.data
+          console.log('Error data:', errorData)
+          
+          // Check for specific error signatures
+          if (errorData.includes('0xd0d25976')) {
+            throw new Error('Custom error: Vote counts cannot be made public (possibly no votes cast yet)')
+          }
+          
+          if (errorData.includes('0x4e487b71')) {
+            throw new Error('Custom error: Invalid proposal ID')
+          }
+        }
+        
+        throw new Error(`Gas estimation failed: ${estimateError?.message || 'Unknown error'}`)
+      }
 
       const tx = await contract.makeVoteCountsPublic(proposalId)
+      console.log('Transaction sent:', tx.hash)
       await tx.wait()
+      console.log('Transaction confirmed')
 
       console.log(`Vote counts made public for proposal ${proposalId}`)
 
@@ -421,6 +487,20 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       await loadProposals()
     } catch (error: any) {
       console.error("Error making vote counts public:", error)
+      
+      // Handle specific contract errors
+      if (error?.message?.includes('Vote counts already public')) {
+        throw new Error('Vote counts are already public for this proposal.')
+      }
+      
+      if (error?.message?.includes('Invalid proposal')) {
+        throw new Error('Invalid proposal ID. Please refresh and try again.')
+      }
+      
+      if (error?.message?.includes('Custom error:')) {
+        throw error // Re-throw custom error messages
+      }
+      
       throw new Error(`Failed to make vote counts public: ${error?.message || 'Unknown error'}`)
     } finally {
       setIsLoading(false)
@@ -454,6 +534,25 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       return encryptedVote
     } catch (error: any) {
       console.error("Error getting my vote:", error)
+      
+      // Handle custom errors
+      if (error?.data) {
+        const errorData = error.data
+        
+        // Check for custom error signatures
+        if (errorData.includes('0x4e487b71')) {
+          throw new Error('Invalid proposal ID')
+        }
+        
+        if (errorData.includes('0x4e487b72')) {
+          throw new Error('You have not voted on this proposal yet')
+        }
+        
+        if (errorData.includes('0xd0d25976')) {
+          throw new Error('FHE permission denied - you may not have voted or FHE is not properly initialized')
+        }
+      }
+      
       throw new Error(`Failed to get my vote: ${error?.message || 'Unknown error'}`)
     }
   }
@@ -602,6 +701,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     getPublicVoteCounts,
     decryptVoteCounts,
     refreshProposals,
+    fheDecrypt,
+    fheUserDecrypt,
   }
 
   return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>

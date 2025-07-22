@@ -10,6 +10,7 @@ interface UseFHEReturn {
   encrypt: (value: number) => Promise<{ encryptedValue: string; proof: string }>;
   decrypt: (encryptedValue: string) => Promise<number>;
   publicDecrypt: (encryptedValue: string) => Promise<number>;
+  userDecrypt: (encryptedValue: string) => Promise<number>;
   refreshInstance: () => Promise<void>;
   resetFHE: () => void;
 }
@@ -131,6 +132,21 @@ export const useFHE = (config?: FHEConfig): UseFHEReturn => {
     }
   }, [fheInstance]);
 
+  const userDecrypt = useCallback(async (encryptedValue: string): Promise<number> => {
+    console.log('FHE userDecrypt called with value:', encryptedValue, 'fheInstance:', !!fheInstance);
+    if (!fheInstance) {
+      throw new Error('FHE service not initialized. Please wait for initialization to complete.');
+    }
+    try {
+      const result = await fheInstance.userDecrypt(encryptedValue);
+      console.log('FHE userDecrypt result:', result);
+      return result;
+    } catch (error) {
+      console.error('FHE userDecrypt error:', error);
+      throw error;
+    }
+  }, [fheInstance]);
+
   return {
     fheInstance,
     isInitialized,
@@ -140,6 +156,7 @@ export const useFHE = (config?: FHEConfig): UseFHEReturn => {
     encrypt,
     decrypt,
     publicDecrypt,
+    userDecrypt,
     refreshInstance,
     resetFHE
   };

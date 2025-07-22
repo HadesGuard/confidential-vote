@@ -11,6 +11,7 @@ export interface FHEInstance {
   encrypt: (value: number) => Promise<{ encryptedValue: string; proof: string }>;
   decrypt: (encryptedValue: string) => Promise<number>;
   publicDecrypt: (encryptedValue: string) => Promise<number>;
+  userDecrypt: (encryptedValue: string) => Promise<number>;
 }
 
 export interface FHEConfig {
@@ -34,12 +35,12 @@ export const VOTE_OPTIONS = {
 // Zama SDK interface
 interface ZamaInstance {
   createEncryptedInput: (contractAddress: string, userAddress: string) => Promise<any>; // Returns buffer object
-  userDecrypt: (encryptedValue: string) => Promise<number>;
-  publicDecrypt: (encryptedValue: string) => Promise<number>;
-  generateKeypair: () => Promise<any>;
+  userDecrypt: (handleContractPairs: any[], privateKey: string, publicKey: string, signature: string, contractAddresses: string[], userAddress: string, startTimeStamp: string, durationDays: string) => Promise<Record<string, any>>;
+  publicDecrypt: (handles: string[]) => Promise<Record<string, any>>;
+  generateKeypair: () => Promise<{ publicKey: string; privateKey: string }>;
   getPublicKey: () => Promise<string>;
   getPublicParams: () => Promise<any>;
-  createEIP712: (data: any) => Promise<any>;
+  createEIP712: (publicKey: string, contractAddresses: string[], startTimeStamp: string, durationDays: string) => Promise<any>;
 }
 
 // Global state for SDK loading
@@ -249,6 +250,9 @@ class FHEService {
       
       publicDecrypt: async (encryptedValue: string): Promise<number> => {
         return await this.publicDecrypt(encryptedValue, config);
+      },
+      userDecrypt: async (encryptedValue: string): Promise<number> => {
+        return await this.userDecrypt(encryptedValue, config);
       }
     };
   }
@@ -322,7 +326,8 @@ class FHEService {
     }
     
     try {
-      const result = await instance.userDecrypt(encryptedValue);
+      // Use publicDecrypt for backward compatibility
+      const result = await this.publicDecrypt(encryptedValue, config);
       console.log('Decryption result:', result);
       
       // Cache the result
@@ -341,14 +346,142 @@ class FHEService {
   async publicDecrypt(encryptedValue: string, config: FHEConfig): Promise<number> {
     const instance = await this.getInstance(config);
     console.log(`Public decrypting value: ${encryptedValue}`);
+    console.log(`Encrypted value type: ${typeof encryptedValue}`);
+    console.log(`Encrypted value length: ${encryptedValue.length}`);
     
     try {
-      const result = await instance.publicDecrypt(encryptedValue);
+      // Check if encryptedValue is a valid hex string
+      if (!encryptedValue.startsWith('0x')) {
+        throw new Error('Encrypted value must be a hex string starting with 0x');
+      }
+      
+      // Try to parse as hex and check if it's valid
+      const hexValue = encryptedValue.slice(2); // Remove 0x prefix
+      if (hexValue.length % 2 !== 0) {
+        throw new Error('Invalid hex string length');
+      }
+      
+      // Public decrypt expects an array of handles
+      const handles = [encryptedValue];
+      console.log('Calling publicDecrypt with handles:', handles);
+      
+      const result = await instance.publicDecrypt(handles);
       console.log('Public decryption result:', result);
-      return result;
+      
+      // Extract the decrypted value for our handle
+      const decryptedValue = result[encryptedValue];
+      console.log('Decrypted value for handle:', decryptedValue);
+      
+      if (decryptedValue === undefined) {
+        throw new Error('No decrypted value found for the given handle');
+      }
+      
+      // Convert to number
+      const numericValue = typeof decryptedValue === 'bigint' ? Number(decryptedValue) : Number(decryptedValue);
+      console.log('Numeric value:', numericValue);
+      
+      return numericValue;
     } catch (error: any) {
       console.error('Public decryption failed:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        encryptedValue: encryptedValue
+      });
       throw new Error(`Public decryption failed: ${error?.message || 'Unknown error'}`);
+    }
+  }
+
+  async userDecrypt(encryptedValue: string, config: FHEConfig): Promise<number> {
+    const instance = await this.getInstance(config);
+    console.log(`User decrypting value: ${encryptedValue}`);
+    
+    try {
+      if (!config.account) {
+        throw new Error('User address is required for user decryption');
+      }
+
+      // Check cache first
+      const cached = this.decryptCache.get(encryptedValue);
+      if (cached && Date.now() - cached.timestamp < this.DECRYPT_CACHE_DURATION) {
+        console.log('Returning cached user decryption result:', cached.value);
+        return cached.value;
+      }
+
+      // Generate keypair for user
+      const keypair = await instance.generateKeypair();
+      console.log('Generated keypair:', {
+        publicKey: keypair.publicKey?.substring(0, 20) + '...',
+        privateKey: keypair.privateKey?.substring(0, 20) + '...'
+      });
+      
+      // Prepare handle-contract pairs
+      const handleContractPairs = [
+        {
+          handle: encryptedValue,
+          contractAddress: CONFIDENTIAL_VOTING_ADDRESS,
+        },
+      ];
+      
+      // Prepare EIP712 signature data
+      const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+      const durationDays = "10";
+      const contractAddresses = [CONFIDENTIAL_VOTING_ADDRESS];
+      
+      const eip712 = await instance.createEIP712(
+        keypair.publicKey, 
+        contractAddresses, 
+        startTimeStamp, 
+        durationDays
+      );
+      
+      console.log('EIP712 data:', eip712);
+      
+      // Get signer from window.ethereum
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      
+      // Sign the EIP712 data
+      const signature = await signer.signTypedData(
+        eip712.domain,
+        {
+          UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+        },
+        eip712.message,
+      );
+      
+      console.log('Signature:', signature);
+      
+      // Perform user decryption
+      const result = await instance.userDecrypt(
+        handleContractPairs,
+        keypair.privateKey,
+        keypair.publicKey,
+        signature.replace("0x", ""),
+        contractAddresses,
+        signer.address,
+        startTimeStamp,
+        durationDays,
+      );
+      
+      console.log('User decryption result:', result);
+      
+      // Extract decrypted value
+      const decryptedValue = result[encryptedValue];
+      console.log('Decrypted value:', decryptedValue);
+      
+      const numericValue = Number(decryptedValue);
+      
+      // Cache the result
+      this.decryptCache.set(encryptedValue, {
+        value: numericValue,
+        timestamp: Date.now()
+      });
+      
+      return numericValue;
+    } catch (error: any) {
+      console.error('User decryption failed:', error);
+      throw new Error(`User decryption failed: ${error?.message || 'Unknown error'}`);
     }
   }
 
