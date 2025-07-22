@@ -2,7 +2,7 @@
 // Similar to zpool-fe structure
 
 // Contract addresses (Sepolia deployment)
-export const CONFIDENTIAL_VOTING_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0xFFF82723DbF6e060FE6663D6194cCB5F77471791";
+export const CONFIDENTIAL_VOTING_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0xD33f00D182e548B0887BA8CF4Df0741bEaa3Af2e";
 
 // Contract ABI - imported from the existing contract.ts
 export const CONFIDENTIAL_VOTING_ABI = [
@@ -309,14 +309,9 @@ export const CONFIDENTIAL_VOTING_ABI = [
 export const SEPOLIA_CHAIN_ID = "0xaa36a7"; // 11155111 in hex
 export const SEPOLIA_RPC_ENDPOINTS = [
   {
-    name: "Lavanet",
-    url: "https://g.w.lavanet.xyz:443/gateway/sep1/rpc-http/ac0a485e471079428fadfc1850f34a3d",
-    priority: 1
-  },
-  {
     name: "PublicNode",
     url: "https://ethereum-sepolia-rpc.publicnode.com",
-    priority: 2
+    priority: 1
   }
 ];
 
