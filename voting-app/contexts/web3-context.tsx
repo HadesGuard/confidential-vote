@@ -74,6 +74,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [contract, setContract] = useState<ethers.Contract | null>(null)
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [hasAttemptedAutoConnect, setHasAttemptedAutoConnect] = useState(false)
 
   // Network validation
   const isCorrectNetwork = chainId === SEPOLIA_CHAIN_ID
@@ -120,17 +121,18 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
   // Auto-reconnect when ethereum becomes available
   useEffect(() => {
-    if (typeof window !== "undefined" && window.ethereum && !isConnected) {
+    if (typeof window !== "undefined" && window.ethereum && !isConnected && !isConnecting) {
       console.log('Ethereum available, checking for existing connection...')
       checkConnection()
     }
-  }, [typeof window !== "undefined" && window.ethereum])
+  }, [isConnected, isConnecting])
 
   // Auto-connect on page load if wallet is already connected
   useEffect(() => {
     const autoConnect = async () => {
-      if (typeof window !== "undefined" && window.ethereum && !isConnected) {
+      if (typeof window !== "undefined" && window.ethereum && !isConnected && !isConnecting && !hasAttemptedAutoConnect) {
         try {
+          setHasAttemptedAutoConnect(true)
           const accounts = await window.ethereum.request({ method: "eth_accounts" })
           if (accounts.length > 0) {
             console.log('Auto-connecting to existing wallet...')
@@ -142,10 +144,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       }
     }
     
-    // Delay auto-connect to ensure page is fully loaded
-    const timer = setTimeout(autoConnect, 500)
+    // Only run auto-connect once on mount
+    const timer = setTimeout(autoConnect, 1000)
     return () => clearTimeout(timer)
-  }, [])
+  }, [hasAttemptedAutoConnect]) // Only depend on hasAttemptedAutoConnect
 
   // Load proposals when FHE is initialized
   useEffect(() => {
@@ -206,11 +208,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Error checking connection:", error)
-        // Retry after a short delay
-        setTimeout(() => {
-          console.log('Retrying connection check...')
-          checkConnection()
-        }, 1000)
+        // Don't retry automatically - let user manually connect if needed
+        // This prevents infinite loops when network is down
       }
     } else {
       console.log('Ethereum provider not available')
@@ -268,6 +267,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     setChainId(null)
     setContract(null)
     setProposals([])
+    setHasAttemptedAutoConnect(false) // Reset to allow auto-connect again
   }
 
   const loadProposals = async (contractInstance?: ethers.Contract) => {

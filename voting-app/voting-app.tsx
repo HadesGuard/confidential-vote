@@ -62,6 +62,10 @@ export default function Component() {
   const [votingStates, setVotingStates] = useState<Record<number, string>>({})
   const [creatingProposal, setCreatingProposal] = useState(false)
   const [proposalOwnership, setProposalOwnership] = useState<Record<number, boolean>>({})
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [proposalsPerPage] = useState(3) // Show 3 proposals per page
 
   // Check voting status and ownership for all proposals
   useEffect(() => {
@@ -99,6 +103,11 @@ export default function Component() {
       // The context will handle reloading, but we can add additional UI updates here if needed
     }
   }, [account, isConnected])
+
+  // Reset pagination when proposals change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [proposals.length])
 
   const checkProposalOwnership = async () => {
     const ownership: Record<number, boolean> = {}
@@ -293,6 +302,18 @@ export default function Component() {
       hour: "2-digit",
       minute: "2-digit",
     })
+  }
+
+  // Pagination logic
+  const indexOfLastProposal = currentPage * proposalsPerPage
+  const indexOfFirstProposal = indexOfLastProposal - proposalsPerPage
+  const currentProposals = proposals.slice(indexOfFirstProposal, indexOfLastProposal)
+  const totalPages = Math.ceil(proposals.length / proposalsPerPage)
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    // Scroll to top when changing page
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const totalVotes = proposals.reduce((acc, p) => acc + p.yesCount + p.noCount, 0)
@@ -537,7 +558,7 @@ export default function Component() {
                 </Card>
               ) : (
                 <div className="grid gap-6">
-                  {proposals.map((proposal) => (
+                  {currentProposals.map((proposal) => (
                     <Card
                       key={proposal.id}
                       className="bg-slate-800/40 backdrop-blur-xl border-slate-700/50 hover:border-purple-500/30 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/10"
@@ -714,6 +735,55 @@ export default function Component() {
                   ))}
                 </div>
               )}
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-8">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-600/30 hover:border-purple-500/50"
+                  >
+                    Previous
+                  </Button>
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <Button
+                        key={page}
+                        variant={currentPage === page ? "default" : "outline"}
+                        onClick={() => handlePageChange(page)}
+                        className={`w-10 h-10 ${
+                          currentPage === page
+                            ? "bg-purple-600 text-white border-purple-600"
+                            : "bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-600/30 hover:border-purple-500/50"
+                        }`}
+                      >
+                        {page}
+                      </Button>
+                    ))}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-600/30 hover:border-purple-500/50"
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
+
+              {/* Page Info */}
+              {totalPages > 1 && (
+                <div className="text-center mt-4">
+                  <p className="text-slate-400 text-sm">
+                    Showing {indexOfFirstProposal + 1}-{Math.min(indexOfLastProposal, proposals.length)} of {proposals.length} proposals
+                  </p>
+                </div>
+              )}
             </TabsContent>
 
             {/* Create Tab */}
@@ -822,7 +892,7 @@ export default function Component() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {proposals.map((proposal) => (
+                    {currentProposals.map((proposal) => (
                       <div key={proposal.id} className="p-4 bg-slate-900/30 rounded-lg border border-slate-700/50">
                         <div className="flex justify-between items-start mb-3">
                           <h4 className="text-white font-medium text-sm leading-relaxed flex-1 pr-4">
@@ -858,6 +928,46 @@ export default function Component() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Pagination Controls for Analytics */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-6">
+                      <Button
+                        variant="outline"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-600/30 hover:border-purple-500/50"
+                      >
+                        Previous
+                      </Button>
+                      
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                          <Button
+                            key={page}
+                            variant={currentPage === page ? "default" : "outline"}
+                            onClick={() => handlePageChange(page)}
+                            className={`w-10 h-10 ${
+                              currentPage === page
+                                ? "bg-purple-600 text-white border-purple-600"
+                                : "bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-600/30 hover:border-purple-500/50"
+                            }`}
+                          >
+                            {page}
+                          </Button>
+                        ))}
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-slate-600/30 hover:border-purple-500/50"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
