@@ -399,6 +399,12 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true)
 
+      // Check if proposal is public - if so, voting is closed
+      const [yesCount, noCount, isPublic] = await contract.getPublicVoteCounts(proposalId)
+      if (isPublic) {
+        throw new Error("Voting is closed for this proposal. Results have been made public.")
+      }
+
       // Convert boolean vote to numeric value for FHE
       const numericVote = voteValue ? VOTE_OPTIONS.YES : VOTE_OPTIONS.NO
       
@@ -448,6 +454,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       
       if (error?.message?.includes('Invalid proposal')) {
         throw new Error('Invalid proposal ID. Please refresh and try again.')
+      }
+      
+      if (error?.message?.includes('Voting is closed')) {
+        throw new Error('Voting is closed for this proposal. Results have been made public.')
       }
       
       const errorMessage = handleFHEError(error)

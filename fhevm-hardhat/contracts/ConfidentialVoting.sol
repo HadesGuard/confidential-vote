@@ -57,8 +57,9 @@ contract ConfidentialVoting is SepoliaConfig {
     ) external {
         if (proposalId >= proposals.length) revert InvalidProposal();
         if (hasVoted[proposalId][msg.sender]) revert AlreadyVoted();
-
+        
         Proposal storage p = proposals[proposalId];
+        if (p.isPublic) revert VoteCountsAlreadyPublic(); // Prevent voting on public proposals
 
         euint8 v = FHE.fromExternal(encryptedVote, proof);
         encryptedVotes[proposalId][msg.sender] = v;

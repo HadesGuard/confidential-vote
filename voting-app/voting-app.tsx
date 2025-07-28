@@ -568,12 +568,34 @@ export default function Component() {
                           <CardTitle className="text-white text-lg leading-relaxed flex-1">
                             {proposal.description}
                           </CardTitle>
-                          <div className="text-xs text-slate-400 whitespace-nowrap">#{proposal.id}</div>
+                          <div className="flex items-center gap-2">
+                            {proposal.isPublic && (
+                              <Badge
+                                variant="secondary"
+                                className="bg-orange-500/20 text-orange-300 border-orange-500/30"
+                              >
+                                <Lock className="h-3 w-3 mr-1" />
+                                Voting Closed
+                              </Badge>
+                            )}
+                            <div className="text-xs text-slate-400 whitespace-nowrap">#{proposal.id}</div>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-6">
                         {/* Voting Buttons */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {proposal.isPublic && (
+                            <div className="col-span-full mb-4 p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+                              <div className="flex items-center gap-2 text-orange-300">
+                                <Lock className="h-4 w-4" />
+                                <span className="font-medium">Voting has been closed</span>
+                              </div>
+                              <p className="text-orange-200/80 text-sm mt-1">
+                                Results are now public. No more votes can be submitted for this proposal.
+                              </p>
+                            </div>
+                          )}
                           <Button
                             variant={getUserVote(proposal.id)?.vote === "yes" ? "default" : "outline"}
                             onClick={() => handleVote(proposal.id, "yes")}
@@ -582,12 +604,13 @@ export default function Component() {
                               isLoading || 
                               fheStatus.loading || 
                               !fheStatus.initialized ||
-                              hasUserVotedOnProposal(proposal.id)
+                              hasUserVotedOnProposal(proposal.id) ||
+                              proposal.isPublic
                             }
                             className={`h-12 font-medium transition-all duration-200 ${
                               getUserVote(proposal.id)?.vote === "yes"
                                 ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white border-0"
-                                : hasUserVotedOnProposal(proposal.id)
+                                : hasUserVotedOnProposal(proposal.id) || proposal.isPublic
                                 ? "bg-slate-600/30 border-slate-500 text-slate-400 cursor-not-allowed"
                                 : "bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-green-600/20 hover:border-green-500/50 hover:text-green-400"
                             }`}
@@ -599,7 +622,7 @@ export default function Component() {
                             ) : (
                               <CheckCircle className="h-4 w-4 mr-2" />
                             )}
-                            {votingStates[proposal.id] || (fheStatus.loading ? "Loading FHE..." : "Vote Yes")}
+                            {votingStates[proposal.id] || (fheStatus.loading ? "Loading FHE..." : proposal.isPublic ? "Voting Closed" : "Vote Yes")}
                           </Button>
                           <Button
                             variant={getUserVote(proposal.id)?.vote === "no" ? "destructive" : "outline"}
@@ -609,12 +632,13 @@ export default function Component() {
                               isLoading || 
                               fheStatus.loading || 
                               !fheStatus.initialized ||
-                              hasUserVotedOnProposal(proposal.id)
+                              hasUserVotedOnProposal(proposal.id) ||
+                              proposal.isPublic
                             }
                             className={`h-12 font-medium transition-all duration-200 ${
                               getUserVote(proposal.id)?.vote === "no"
                                 ? "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white border-0"
-                                : hasUserVotedOnProposal(proposal.id)
+                                : hasUserVotedOnProposal(proposal.id) || proposal.isPublic
                                 ? "bg-slate-600/30 border-slate-500 text-slate-400 cursor-not-allowed"
                                 : "bg-slate-700/30 border-slate-600 text-slate-300 hover:bg-red-600/20 hover:border-red-500/50 hover:text-red-400"
                             }`}
@@ -626,7 +650,7 @@ export default function Component() {
                             ) : (
                               <XCircle className="h-4 w-4 mr-2" />
                             )}
-                            {votingStates[proposal.id] || (fheStatus.loading ? "Loading FHE..." : "Vote No")}
+                            {votingStates[proposal.id] || (fheStatus.loading ? "Loading FHE..." : proposal.isPublic ? "Voting Closed" : "Vote No")}
                           </Button>
                         </div>
 
