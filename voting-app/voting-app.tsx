@@ -92,6 +92,14 @@ export default function Component() {
     }
   }, [isConnected])
 
+  // Reload when account changes (handled by context, but ensure UI is updated)
+  useEffect(() => {
+    if (isConnected && account) {
+      console.log('Account connected:', account)
+      // The context will handle reloading, but we can add additional UI updates here if needed
+    }
+  }, [account, isConnected])
+
   const checkProposalOwnership = async () => {
     const ownership: Record<number, boolean> = {}
     

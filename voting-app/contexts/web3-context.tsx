@@ -114,7 +114,37 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
   // Initialize Web3
   useEffect(() => {
+    console.log('Initializing Web3...')
     checkConnection()
+  }, [])
+
+  // Auto-reconnect when ethereum becomes available
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.ethereum && !isConnected) {
+      console.log('Ethereum available, checking for existing connection...')
+      checkConnection()
+    }
+  }, [typeof window !== "undefined" && window.ethereum])
+
+  // Auto-connect on page load if wallet is already connected
+  useEffect(() => {
+    const autoConnect = async () => {
+      if (typeof window !== "undefined" && window.ethereum && !isConnected) {
+        try {
+          const accounts = await window.ethereum.request({ method: "eth_accounts" })
+          if (accounts.length > 0) {
+            console.log('Auto-connecting to existing wallet...')
+            await connectWallet()
+          }
+        } catch (error) {
+          console.error('Auto-connect failed:', error)
+        }
+      }
+    }
+    
+    // Delay auto-connect to ensure page is fully loaded
+    const timer = setTimeout(autoConnect, 500)
+    return () => clearTimeout(timer)
   }, [])
 
   // Load proposals when FHE is initialized
@@ -126,13 +156,19 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   }, [fheInitialized, isConnected, contract])
 
   const checkConnection = async () => {
+    console.log('Checking connection...')
     if (typeof window !== "undefined" && window.ethereum) {
       try {
+        console.log('Ethereum provider found, checking accounts...')
         const accounts = await window.ethereum.request({ method: "eth_accounts" })
+        console.log('Available accounts:', accounts)
+        
         if (accounts.length > 0) {
+          console.log('Found connected account:', accounts[0])
           // User was already connected, restore the connection
           const chainId = await window.ethereum.request({ method: "eth_chainId" })
           const currentChainId = Number.parseInt(chainId, 16)
+          console.log('Current chain ID:', currentChainId)
           
           setAccount(accounts[0])
           setChainId(currentChainId)
@@ -170,7 +206,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Error checking connection:", error)
+        // Retry after a short delay
+        setTimeout(() => {
+          console.log('Retrying connection check...')
+          checkConnection()
+        }, 1000)
       }
+    } else {
+      console.log('Ethereum provider not available')
     }
   }
 
@@ -664,16 +707,25 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   // Listen for account changes
   useEffect(() => {
     if (typeof window !== "undefined" && window.ethereum) {
-      const handleAccountsChanged = (accounts: string[]) => {
+      const handleAccountsChanged = async (accounts: string[]) => {
+        console.log('Account changed:', accounts)
         if (accounts.length === 0) {
           disconnectWallet()
         } else {
-          setAccount(accounts[0])
+          const newAccount = accounts[0]
+          console.log('New account:', newAccount)
+          
+          // Reload page when account changes to ensure proper FHE re-initialization
+          // This is the safest approach since FHE service needs to be re-initialized with new account
+          window.location.reload()
         }
       }
 
       const handleChainChanged = (chainId: string) => {
+        console.log('Chain changed:', chainId)
         setChainId(Number.parseInt(chainId, 16))
+        // Reload page when chain changes to ensure proper initialization
+        window.location.reload()
       }
 
       window.ethereum.on("accountsChanged", handleAccountsChanged)
@@ -684,7 +736,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         window.ethereum.removeListener("chainChanged", handleChainChanged)
       }
     }
-  }, [])
+  }, [fheInitialized, contract, chainId])
 
   const value: Web3ContextType = {
     account,
