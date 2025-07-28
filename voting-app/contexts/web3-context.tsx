@@ -59,6 +59,7 @@ interface Web3ContextType {
   getPublicVoteCounts: (proposalId: number) => Promise<{yesCount: number, noCount: number, isPublic: boolean}>
   decryptVoteCounts: (proposalId: number) => Promise<{yesCount: number, noCount: number}>
   refreshProposals: () => Promise<void>
+  isProposalOwner: (proposalId: number) => Promise<boolean>
   fheDecrypt?: (encryptedValue: any) => Promise<number>
   fheUserDecrypt?: (encryptedValue: any) => Promise<number>
 }
@@ -575,6 +576,17 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     }
   }
 
+  const isProposalOwner = async (proposalId: number): Promise<boolean> => {
+    if (!contract || !account) return false;
+    try {
+      const result = await contract.isProposalOwner(proposalId, account);
+      return result;
+    } catch (error: any) {
+      console.error("Error checking proposal ownership:", error);
+      return false;
+    }
+  };
+
   const decryptVoteCounts = async (proposalId: number): Promise<{yesCount: number, noCount: number}> => {
     if (!contract || !fheInitialized) {
       throw new Error("Contract or FHE not initialized")
@@ -701,6 +713,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     getPublicVoteCounts,
     decryptVoteCounts,
     refreshProposals,
+    isProposalOwner,
     fheDecrypt,
     fheUserDecrypt,
   }

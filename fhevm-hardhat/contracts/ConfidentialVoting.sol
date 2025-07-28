@@ -31,12 +31,14 @@ contract ConfidentialVoting is SepoliaConfig {
 
     mapping(uint256 => mapping(address => euint8)) private encryptedVotes;
     mapping(uint256 => mapping(address => bool)) private hasVoted;
+    mapping(uint256 => address) private proposalOwner;
 
     event ProposalCreated(uint256 indexed proposalId, string description);
     event Voted(uint256 indexed proposalId, address voter);
     event VoteCountsMadePublic(uint256 indexed proposalId);
 
     function createProposal(string calldata description) external {
+        uint256 proposalId = proposals.length;
         Proposal storage newProposal = proposals.push();
         newProposal.description = description;
         newProposal.yesCount = FHE.asEuint8(0);
@@ -44,7 +46,8 @@ contract ConfidentialVoting is SepoliaConfig {
         newProposal.isPublic = false;
         newProposal.publicYesCount = 0;
         newProposal.publicNoCount = 0;
-        emit ProposalCreated(proposals.length - 1, description);
+        proposalOwner[proposalId] = msg.sender;
+        emit ProposalCreated(proposalId, description);
     }
 
     function vote(
@@ -115,8 +118,15 @@ contract ConfidentialVoting is SepoliaConfig {
         return true;
     }
 
+    function isProposalOwner(uint256 proposalId, address user) external view returns (bool) {
+        if (proposalId >= proposals.length) revert InvalidProposal();
+        return proposalOwner[proposalId] == user;
+    }
+
     function makeVoteCountsPublic(uint256 proposalId) external {
         if (proposalId >= proposals.length) revert InvalidProposal();
+        if (msg.sender != proposalOwner[proposalId]) revert FHEPermissionDenied();
+        
         Proposal storage p = proposals[proposalId];
         if (p.isPublic) revert VoteCountsAlreadyPublic();
 

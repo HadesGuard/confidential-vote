@@ -4,7 +4,7 @@
 // This replaces both zamaService.ts and fheService.ts
 
 import { ethers } from 'ethers';
-import { CONFIDENTIAL_VOTING_ADDRESS, CONTRACT_CONFIG } from './contracts';
+import { CONFIDENTIAL_VOTING_ADDRESS } from './contracts';
 
 // Types for FHE operations
 export interface FHEInstance {
@@ -581,10 +581,6 @@ export const prepareVoteForContract = async (voteValue: number, config: FHEConfi
 // Contract interaction utilities
 export const getContractAddress = (): string => {
   return CONFIDENTIAL_VOTING_ADDRESS;
-};
-
-export const getContractConfig = () => {
-  return CONTRACT_CONFIG;
 };
 
 export const validateContractAddress = (address: string): boolean => {

@@ -50,6 +50,7 @@ export default function Component() {
     decryptVoteCounts,
     refreshProposals,
     switchToSepolia,
+    isProposalOwner,
     fheDecrypt,
     fheUserDecrypt
   } = useWeb3()
@@ -60,8 +61,9 @@ export default function Component() {
   const [userVotes, setUserVotes] = useState<UserVote[]>([])
   const [votingStates, setVotingStates] = useState<Record<number, string>>({})
   const [creatingProposal, setCreatingProposal] = useState(false)
+  const [proposalOwnership, setProposalOwnership] = useState<Record<number, boolean>>({})
 
-  // Check voting status for all proposals
+  // Check voting status and ownership for all proposals
   useEffect(() => {
     if (isConnected && proposals.length > 0 && fheStatus.initialized) {
       // Only check for proposals we don't already have votes for
@@ -75,16 +77,39 @@ export default function Component() {
       } else {
         console.log('All proposals already have local vote data')
       }
+
+      // Check ownership for all proposals
+      checkProposalOwnership()
     }
   }, [isConnected, proposals, fheStatus.initialized])
 
-  // Clear user votes when wallet disconnects
+  // Clear user votes and ownership when wallet disconnects
   useEffect(() => {
     if (!isConnected) {
       setUserVotes([])
       setVotingStates({})
+      setProposalOwnership({})
     }
   }, [isConnected])
+
+  const checkProposalOwnership = async () => {
+    const ownership: Record<number, boolean> = {}
+    
+    try {
+      for (const proposal of proposals) {
+        try {
+          const isOwner = await isProposalOwner(proposal.id)
+          ownership[proposal.id] = isOwner
+        } catch (error) {
+          console.error(`Error checking ownership for proposal ${proposal.id}:`, error)
+          ownership[proposal.id] = false
+        }
+      }
+      setProposalOwnership(ownership)
+    } catch (error) {
+      console.error('Error checking proposal ownership:', error)
+    }
+  }
 
   const checkVotingStatus = async () => {
     const votes: UserVote[] = []
@@ -576,8 +601,8 @@ export default function Component() {
                           </Button>
                         </div>
 
-                        {/* Make Results Public Button */}
-                        {hasUserVotedOnProposal(proposal.id) && !proposal.isPublic && (
+                        {/* Make Results Public Button - Only for proposal owner */}
+                        {proposalOwnership[proposal.id] && !proposal.isPublic && (
                           <Button
                             variant="ghost"
                             onClick={() => handleMakePublic(proposal.id)}
